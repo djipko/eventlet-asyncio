@@ -1,0 +1,12 @@
+POC Eventlet exectutor that dispatches to asyncio (trollius) event loop for processing 
+===
+
+Accept connections in an Eventlet thread and then dispatch to an asyncio loop
+for processing.
+
+This is a POC for porting an exeutor based Eventlet service (such as are many in
+OpenStack) to asyncio.
+
+We can make porting services granular by detecting that the callback is an
+asyncio Future or coroutine, we dispatch to asyncio or process in a greenlet
+as usual.
