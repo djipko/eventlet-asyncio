@@ -25,7 +25,7 @@ class AsyncioThread(threading.Thread):
         self.loop.run_forever()
 
 
-class EventletFuture(object):
+class EventletAsyncioFuture(object):
     def __init__(self, loop, callback, *args, **kwargs):
         self.loop = loop
         self.callback = callback
@@ -40,7 +40,8 @@ class EventletFuture(object):
             self._result = yield From(self.callback(*self.args, **self.kwargs))
 
         def _dispatch_and_wait():
-            self.loop.call_soon_threadsafe(trollius.async, _callback(), self.loop)
+            self.loop.call_soon_threadsafe(
+                    trollius.async, _callback(), self.loop)
             while True:
                 eventlet.sleep()
                 if self._result != self.sentinel:
@@ -50,9 +51,21 @@ class EventletFuture(object):
         return gt.wait()
 
 
-class Executor(object):
-    def __init__(self, callback, stream=None):
+class EventletFuture(object):
+    def __init__(self, loop, callback, *args, **kwargs):
         self.callback = callback
+        self.args = args
+        self.kwargs = kwargs
+
+    def result(self):
+        gt = eventlet.spawn(self.callback, *self.args, **self.kwargs)
+        return gt.wait()
+
+
+class Executor(object):
+    def __init__(self, eventlet_callback, asyncio_callback, stream=None):
+        self.eventlet_callback = eventlet_callback
+        self.asyncio_callback = asyncio_callback
         self.stream = stream or sys.stdin
         self.asyncio_thread = AsyncioThread()
 
@@ -63,8 +76,13 @@ class Executor(object):
         eventlet.monkey_patch(thread=False)
 
         for line in (l.strip() for l in self.stream.readlines()):
-            fut = EventletFuture(self.asyncio_thread.loop, self.callback, line)
-            result = fut.result()
+            if line.startswith('def'):
+                fut = EventletFuture(None, self.eventlet_callback, line)
+                result = fut.result()
+            else:
+                fut = EventletAsyncioFuture(
+                        self.asyncio_thread.loop, self.asyncio_callback, line)
+                result = fut.result()
             print("<Executor %d>: %s" %
                   (threading.current_thread().ident, result))
 
@@ -80,16 +98,20 @@ class Executor(object):
 
 
 @trollius.coroutine
-def async_reverser(line):
+def asyncio_reverser(line):
     print("<Processor %d>: %s" % (threading.current_thread().ident, line))
     yield From(trollius.sleep(0.1))
     raise Return(''.join(reversed(line)))
 
 
+def eventlet_reverser(line):
+    print("<Executor %d>: %s" % (threading.current_thread().ident, line))
+    return ''.join(reversed(line))
+
+
 if __name__ == '__main__':
-     e = Executor(async_reverser, open(__file__))
+     e = Executor(eventlet_reverser, asyncio_reverser, open(__file__))
      try:
          e.start()
      finally:
          e.stop()
-
