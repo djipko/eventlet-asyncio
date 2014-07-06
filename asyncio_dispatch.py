@@ -18,7 +18,7 @@ class AsyncioThread(threading.Thread):
         self._ready.wait()
 
     def run(self):
-        print("<Processor %d>" % threading.current_thread().ident)
+        print("<Processor %d>: Starting" % threading.current_thread().ident)
         self.loop = trollius.new_event_loop()
         trollius.set_event_loop(self.loop)
         self.loop.call_soon(self._ready.set)
@@ -57,16 +57,16 @@ class Executor(object):
         self.asyncio_thread = AsyncioThread()
 
     def start(self):
-        print("<Executor %d>" % threading.current_thread().ident)
+        print("<Executor %d>: Starting" % threading.current_thread().ident)
         self.asyncio_thread.start()
         self.asyncio_thread.wait_ready()
         eventlet.monkey_patch(thread=False)
 
-        for line in self.stream.readlines():
-            fut = EventletFuture(self.asyncio_thread.loop, self.callback, line.strip())
+        for line in (l.strip() for l in self.stream.readlines()):
+            fut = EventletFuture(self.asyncio_thread.loop, self.callback, line)
             result = fut.result()
-            print("<Reader %d>: %s, %s" %
-                  (threading.current_thread().ident, line.strip(), result))
+            print("<Executor %d>: %s" %
+                  (threading.current_thread().ident, result))
 
     def stop(self):
        self.asyncio_thread.loop.stop()
@@ -81,8 +81,8 @@ class Executor(object):
 
 @trollius.coroutine
 def async_reverser(line):
-    print("<Processor %d>" % threading.current_thread().ident)
-    yield From(trollius.sleep(1))
+    print("<Processor %d>: %s" % (threading.current_thread().ident, line))
+    yield From(trollius.sleep(0.1))
     raise Return(''.join(reversed(line)))
 
 
